@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipForge — YouTube to Shorts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #14161C;
+    --panel: #1C1F27;
+    --line: #2A2E3A;
+    --text: #E9EAEE;
+    --mute: #8B90A0;
+    --amber: #FFB224;
+    --amber-dim: rgba(255, 178, 36, .12);
+    --red: #FF5D5D;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 28px 20px 80px; }
+
+  /* ---- header ---- */
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 18px; border-bottom: 1px solid var(--line); margin-bottom: 40px;
+  }
+  .wordmark { font-family: "Space Grotesk"; font-weight: 700; font-size: 20px; letter-spacing: -.02em; }
+  .wordmark em { font-style: normal; color: var(--amber); }
+  .tc { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--mute); }
+
+  /* ---- hero / input ---- */
+  h1 {
+    font-family: "Space Grotesk"; font-weight: 700; font-size: clamp(26px, 5.5vw, 38px);
+    letter-spacing: -.03em; line-height: 1.12; margin-bottom: 10px;
+  }
+  .sub { color: var(--mute); margin-bottom: 28px; max-width: 46ch; }
+
+  .cmdbar {
+    display: flex; gap: 0; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--panel); overflow: hidden;
+    transition: border-color .15s;
+  }
+  .cmdbar:focus-within { border-color: var(--amber); }
+  .cmdbar input {
+    flex: 1; min-width: 0; background: none; border: 0; outline: 0;
+    color: var(--text); font-family: "IBM Plex Mono", monospace; font-size: 14px;
+    padding: 15px 16px;
+  }
+  .cmdbar input::placeholder { color: #565b6b; }
+  .cmdbar button {
+    background: var(--amber); color: #14161C; border: 0; cursor: pointer;
+    font-family: "Space Grotesk"; font-weight: 700; font-size: 15px;
+    padding: 0 22px; white-space: nowrap;
+  }
+  .cmdbar button:disabled { opacity: .45; cursor: default; }
+  .cmdbar button:focus-visible, .clip-dl:focus-visible, .again:focus-visible {
+    outline: 2px solid var(--amber); outline-offset: 2px;
+  }
+  .opts { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: var(--mute); font-size: 13px; }
+  .opts select {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; font-family: "IBM Plex Mono", monospace; font-size: 13px;
+  }
+  .err { margin-top: 16px; color: var(--red); font-size: 14px; display: none; }
+
+  /* ---- pipeline rail ---- */
+  .rail { margin-top: 46px; display: none; }
+  .rail-head { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--mute);
+    text-transform: uppercase; letter-spacing: .12em; margin-bottom: 16px; }
+  .stage {
+    display: flex; align-items: center; gap: 14px; padding: 11px 0;
+    border-bottom: 1px solid var(--line); color: var(--mute);
+  }
+  .stage:last-child { border-bottom: 0; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex-shrink: 0;
+  }
+  .stage.active { color: var(--text); }
+  .stage.active .dot { background: var(--amber); animation: pulse 1.4s ease-in-out infinite; }
+  .stage.done { color: var(--text); }
+  .stage.done .dot { background: var(--text); animation: none; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 6px var(--amber-dim); } }
+  @media (prefers-reduced-motion: reduce) { .stage.active .dot { animation: none; } }
+  .stage .label { font-family: "IBM Plex Mono", monospace; font-size: 13px; flex: 1; }
+  .stage .pct { font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; margin-top: 22px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--amber); transition: width .5s ease; }
+
+  /* ---- results: timeline signature ---- */
+  .results { margin-top: 52px; display: none; }
+  .vtitle { font-family: "Space Grotesk"; font-weight: 500; font-size: 17px; margin-bottom: 4px; }
+  .vmeta { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--mute); margin-bottom: 20px; }
+
+  .timeline {
+    position: relative; height: 56px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px;
+    background-image: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--line) calc(10% - 1px) 10%);
+  }
+  .tseg {
+    position: absolute; top: 8px; bottom: 8px; background: var(--amber-dim);
+    border: 1px solid var(--amber); border-radius: 4px; cursor: pointer;
+  }
+  .tseg span {
+    position: absolute; top: -1px; left: 50%; transform: translate(-50%, -110%);
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--amber);
+    white-space: nowrap; opacity: 0; transition: opacity .15s; pointer-events: none;
+  }
+  .tseg:hover span, .tseg.hot span { opacity: 1; }
+  .tseg.hot { background: rgba(255,178,36,.28); }
+  .tlegend { display: flex; justify-content: space-between; font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; color: var(--mute); margin-bottom: 34px; }
+
+  /* ---- clip cards ---- */
+  .clip {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+    padding: 18px; margin-bottom: 14px;
+  }
+  .clip-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .clip-title { font-family: "Space Grotesk"; font-weight: 500; font-size: 16px; }
+  .clip-time { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--amber); white-space: nowrap; }
+  .clip-hook { color: var(--mute); font-size: 13.5px; margin-top: 6px; font-style: italic; }
+  .clip-reason { color: var(--mute); font-size: 13px; margin-top: 8px; }
+  .clip-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+  .clip-status { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--mute); }
+  .clip-status.rendering { color: var(--amber); }
+  .clip-status.failed { color: var(--red); }
+  .clip-dl {
+    display: none; text-decoration: none; background: var(--amber); color: #14161C;
+    font-family: "Space Grotesk"; font-weight: 700; font-size: 14px;
+    padding: 9px 18px; border-radius: 7px;
+  }
+  .clip.done .clip-dl { display: inline-block; }
+  .clip.done .clip-status { display: none; }
+
+  .again {
+    margin-top: 30px; background: none; border: 1px solid var(--line); color: var(--text);
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; padding: 10px 18px;
+    border-radius: 8px; cursor: pointer; display: none;
+  }
+  footer { margin-top: 70px; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: #565b6b; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="wordmark">Clip<em>Forge</em></div>
+    <div class="tc" id="clock">00:00:00:00</div>
+  </header>
+
+  <h1>One long video in.<br>Ready-to-post Shorts out.</h1>
+  <p class="sub">Paste a YouTube link. Claude finds the strongest moments, cuts them vertical, and burns in word-by-word captions. No watermark — they're your videos.</p>
+
+  <div class="cmdbar">
+    <input id="url" type="url" inputmode="url" placeholder="https://youtube.com/watch?v=..." aria-label="YouTube video URL">
+    <button id="go">Forge clips</button>
+  </div>
+  <div class="opts">
+    <label for="maxclips">Clips to extract</label>
+    <select id="maxclips">
+      <option>3</option><option selected>5</option><option>7</option><option>10</option>
+    </select>
+  </div>
+  <p class="err" id="err"></p>
+
+  <section class="rail" id="rail" aria-live="polite">
+    <div class="rail-head">Pipeline</div>
+    <div class="stage" data-stage="downloading"><span class="dot"></span><span class="label">01 · Download source</span><span class="pct"></span></div>
+    <div class="stage" data-stage="transcribing"><span class="dot"></span><span class="label">02 · Transcribe (Whisper)</span><span class="pct"></span></div>
+    <div class="stage" data-stage="analyzing"><span class="dot"></span><span class="label">03 · Find moments (Claude · Bedrock)</span><span class="pct"></span></div>
+    <div class="stage" data-stage="rendering"><span class="dot"></span><span class="label">04 · Cut · crop · caption (ffmpeg)</span><span class="pct"></span></div>
+    <div class="bar"><i id="barfill"></i></div>
+  </section>
+
+  <section class="results" id="results">
+    <div class="vtitle" id="vtitle"></div>
+    <div class="vmeta" id="vmeta"></div>
+    <div class="timeline" id="timeline" aria-label="Clip positions on source timeline"></div>
+    <div class="tlegend"><span>00:00</span><span id="tdur"></span></div>
+    <div id="cliplist"></div>
+    <button class="again" id="again">forge another video →</button>
+  </section>
+
+  <footer>self-hosted · bedrock + whisper + ffmpeg · for your own videos</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const STAGES = ["downloading", "transcribing", "analyzing", "rendering"];
+let jobId = null, poller = null;
+
+// running timecode in the header
+let t0 = Date.now();
+setInterval(() => {
+  const ms = Date.now() - t0;
+  const f = Math.floor(ms / 40) % 25;
+  const s = Math.floor(ms / 1000);
+  const pad = n => String(n).padStart(2, "0");
+  $("clock").textContent = `${pad(Math.floor(s/3600))}:${pad(Math.floor(s/60)%60)}:${pad(s%60)}:${pad(f)}`;
+}, 120);
+
+function fmt(sec) {
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+
+$("go").addEventListener("click", start);
+$("url").addEventListener("keydown", e => { if (e.key === "Enter") start(); });
+$("again").addEventListener("click", () => location.reload());
+
+async function start() {
+  const url = $("url").value.trim();
+  $("err").style.display = "none";
+  if (!url) return;
+  $("go").disabled = true;
+  try {
+    const r = await fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, max_clips: parseInt($("maxclips").value) })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Request failed");
+    jobId = data.job_id;
+    $("rail").style.display = "block";
+    t0 = Date.now();
+    poller = setInterval(poll, 2000);
+  } catch (e) {
+    showError(e.message);
+    $("go").disabled = false;
+  }
+}
+
+function showError(msg) {
+  $("err").textContent = msg;
+  $("err").style.display = "block";
+}
+
+async function poll() {
+  let job;
+  try {
+    const r = await fetch(`/api/jobs/${jobId}`);
+    job = await r.json();
+  } catch { return; }
+
+  if (job.stage === "error") {
+    clearInterval(poller);
+    showError(job.error || "Something went wrong.");
+    if (job.clips.some(c => c.status === "done")) {
+      renderResults(job);   // salvage: show clips that DID finish
+      $("again").style.display = "inline-block";
+    }
+    $("go").disabled = false;
+    return;
+  }
+
+  // stage rail
+  const idx = STAGES.indexOf(job.stage);
+  document.querySelectorAll(".stage").forEach((el, i) => {
+    el.classList.toggle("done", job.stage === "done" || i < idx);
+    el.classList.toggle("active", i === idx);
+    const pct = el.querySelector(".pct");
+    if (i === idx) pct.textContent = Math.round(job.progress * 100) + "%";
+    else if (job.stage === "done" || i < idx) pct.textContent = "ok";
+    else pct.textContent = "";
+  });
+  const overall = job.stage === "done" ? 1 : (Math.max(idx,0) + job.progress) / STAGES.length;
+  $("barfill").style.width = (overall * 100) + "%";
+
+  if (job.clips.length) renderResults(job);
+
+  if (job.stage === "done") {
+    clearInterval(poller);
+    $("again").style.display = "inline-block";
+  }
+}
+
+function renderResults(job) {
+  $("results").style.display = "block";
+  const dur = job.video?.duration || Math.max(...job.clips.map(c => c.end));
+  $("vtitle").textContent = job.video?.title || "";
+  $("vmeta").textContent = `source · ${fmt(dur)} · ${job.clips.length} clips found`;
+  $("tdur").textContent = fmt(dur);
+
+  // timeline signature
+  const tl = $("timeline");
+  tl.innerHTML = "";
+  job.clips.forEach(c => {
+    const seg = document.createElement("div");
+    seg.className = "tseg";
+    seg.style.left = (c.start / dur * 100) + "%";
+    seg.style.width = Math.max((c.end - c.start) / dur * 100, 1.2) + "%";
+    seg.innerHTML = `<span>${fmt(c.start)} · ${c.title.slice(0, 28)}</span>`;
+    seg.addEventListener("mouseenter", () => hot(c.index, true));
+    seg.addEventListener("mouseleave", () => hot(c.index, false));
+    seg.addEventListener("click", () =>
+      document.querySelector(`[data-clip="${c.index}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    tl.appendChild(seg);
+  });
+
+  // clip cards
+  const list = $("cliplist");
+  list.innerHTML = "";
+  job.clips.forEach(c => {
+    const el = document.createElement("article");
+    el.className = "clip" + (c.status === "done" ? " done" : "");
+    el.dataset.clip = c.index;
+    const statusText = c.status === "rendering" ? "rendering…" : c.status === "pending" ? "queued"
+      : c.status === "failed" ? "failed — " + (c.error || "render error") : "";
+    el.innerHTML = `
+      <div class="clip-top">
+        <div class="clip-title">${esc(c.title)}</div>
+        <div class="clip-time">${fmt(c.start)} → ${fmt(c.end)}</div>
+      </div>
+      ${c.hook ? `<div class="clip-hook">“${esc(c.hook)}”</div>` : ""}
+      ${c.reason ? `<div class="clip-reason">${esc(c.reason)}</div>` : ""}
+      <div class="clip-foot">
+        <span class="clip-status ${c.status}">${statusText}</span>
+        <a class="clip-dl" href="/api/jobs/${jobId}/clips/${c.index}" download>Download clip</a>
+      </div>`;
+    list.appendChild(el);
+  });
+}
+
+function hot(i, on) {
+  document.querySelectorAll(".tseg").forEach((s, j) => { if (j === i) s.classList.toggle("hot", on); });
+}
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>

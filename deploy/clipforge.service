@@ -1,0 +1,19 @@
+# Copy to /etc/systemd/system/clipforge.service (adjust paths/user), then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now clipforge
+[Unit]
+Description=ClipForge - YouTube to Shorts
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/clipforge/backend
+Environment=AWS_REGION=us-east-1
+Environment=WHISPER_MODEL=small
+# Uncomment to require a password (any username works):
+# Environment=CLIPFORGE_PASSWORD=change-me
+ExecStart=/home/ubuntu/clipforge/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
