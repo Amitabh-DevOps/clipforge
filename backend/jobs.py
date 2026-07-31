@@ -7,8 +7,10 @@ import copy
 import json
 import os
 import threading
+import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import config
@@ -65,6 +67,7 @@ def create_job(url: str, max_clips: int) -> str:
             "video": None,
             "clips": [],
             "error": None,
+            "timings": {},
         }
         _persist(JOBS[job_id])
     t = threading.Thread(target=_run, args=(job_id,), daemon=True)
@@ -97,17 +100,30 @@ def _run_pipeline(job_id: str):
     job_dir = config.DATA_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
+    timings = {}
+
+    def _timed(name):
+        class _T:
+            def __enter__(self):
+                self.t0 = time.monotonic()
+            def __exit__(self, *a):
+                timings[name] = round(time.monotonic() - self.t0, 1)
+                _update(job_id, timings=dict(timings))
+        return _T()
+
     try:
         # 1. Download
         _update(job_id, stage="downloading", progress=0.0)
-        video = downloader.download(job["url"], job_dir)
+        with _timed("download"):
+            video = downloader.download(job["url"], job_dir)
         _update(job_id, video=video, progress=1.0)
 
         # 2. Transcribe
         _update(job_id, stage="transcribing", progress=0.0)
-        transcript = transcriber.transcribe(
-            video["path"], progress_cb=lambda p: _update(job_id, progress=p)
-        )
+        with _timed("transcribe"):
+            transcript = transcriber.transcribe(
+                video["path"], progress_cb=lambda p: _update(job_id, progress=p)
+            )
         duration = video["duration"] or (
             transcript["segments"][-1]["end"] if transcript["segments"] else 0
         )
@@ -118,21 +134,23 @@ def _run_pipeline(job_id: str):
 
         # 3. Analyze with Bedrock Claude
         _update(job_id, stage="analyzing", progress=0.0)
-        found = analyzer.find_clips(
-            video["title"], duration, transcript["segments"], job["max_clips"]
-        )
+        with _timed("analyze"):
+            found = analyzer.find_clips(
+                video["title"], duration, transcript["segments"], job["max_clips"]
+            )
         clips = [
             {**c, "index": i, "status": "pending", "file": None}
             for i, c in enumerate(found)
         ]
         _update(job_id, clips=clips, progress=1.0)
 
-        # 4. Render each clip — one bad clip must not kill the others
+        # 4. Render clips in parallel — one bad clip must not kill the others
         _update(job_id, stage="rendering", progress=0.0)
-        ok_count = 0
-        for i, clip in enumerate(clips):
+        done_count = {"n": 0}
+        count_lock = threading.Lock()
+
+        def _render_one(i, clip):
             _update_clip(job_id, i, status="rendering")
-            _update(job_id, progress=i / len(clips))
             out_path = job_dir / f"clip_{i}.mp4"
             try:
                 plan = cutter.plan_layout(video["path"], clip["start"], clip["end"])
@@ -146,13 +164,21 @@ def _run_pipeline(job_id: str):
                 )
                 _update_clip(job_id, i, status="done", file=str(out_path),
                              layout=plan["mode"])
-                ok_count += 1
+                ok = True
             except Exception as clip_err:
-                out_path.unlink(missing_ok=True)  # remove partial file
+                out_path.unlink(missing_ok=True)
                 _update_clip(job_id, i, status="failed", error=str(clip_err)[:300])
-            _update(job_id, progress=(i + 1) / len(clips))
+                ok = False
+            with count_lock:
+                done_count["n"] += 1
+                _update(job_id, progress=done_count["n"] / len(clips))
+            return ok
 
-        if ok_count == 0:
+        with _timed("render"):
+            with ThreadPoolExecutor(max_workers=config.RENDER_WORKERS) as pool:
+                results = list(pool.map(lambda ic: _render_one(*ic), enumerate(clips)))
+
+        if not any(results):
             raise RuntimeError("All clips failed to render. Check ffmpeg on this machine.")
         _update(job_id, stage="done", progress=1.0)
 

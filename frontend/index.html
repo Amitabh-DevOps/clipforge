@@ -318,7 +318,14 @@ function renderResults(job) {
   $("results").style.display = "block";
   const dur = job.video?.duration || Math.max(...job.clips.map(c => c.end));
   $("vtitle").textContent = job.video?.title || "";
-  $("vmeta").textContent = `source · ${fmt(dur)} · ${job.clips.length} clips found`;
+  let meta = `source · ${fmt(dur)} · ${job.clips.length} clips found`;
+  const tm = job.timings || {};
+  if (Object.keys(tm).length) {
+    const parts = ["download","transcribe","analyze","render"]
+      .filter(k => tm[k] != null).map(k => `${k} ${Math.round(tm[k])}s`);
+    if (parts.length) meta += ` · ${parts.join(" · ")}`;
+  }
+  $("vmeta").textContent = meta;
   $("tdur").textContent = fmt(dur);
 
   // timeline signature

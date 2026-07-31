@@ -53,6 +53,10 @@ MAX_CLIPS_DEFAULT = int(os.getenv("MAX_CLIPS_DEFAULT", "5"))
 CLIP_MIN_SECONDS = float(os.getenv("CLIP_MIN_SECONDS", "15"))
 CLIP_MAX_SECONDS = float(os.getenv("CLIP_MAX_SECONDS", "60"))
 
+# ---- Performance ----
+# Clips rendered in parallel. 2 is right for 8 vCPU; 1 for small instances.
+RENDER_WORKERS = int(os.getenv("RENDER_WORKERS", "2"))
+
 # ---- Output video ----
 OUT_WIDTH = 1080
 OUT_HEIGHT = 1920
