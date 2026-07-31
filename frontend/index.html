@@ -129,6 +129,17 @@
   .clip-title { font-family: "Space Grotesk"; font-weight: 500; font-size: 16px; }
   .clip-time { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--amber); white-space: nowrap; }
   .clip-hook { color: var(--mute); font-size: 13.5px; margin-top: 6px; font-style: italic; }
+  .clip-badge { font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--amber);
+    border: 1px solid var(--amber); border-radius: 4px; padding: 1px 6px; margin-left: 8px;
+    vertical-align: 2px; }
+  .meta { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .meta-title { font-size: 14px; font-weight: 500; }
+  .meta-desc { color: var(--mute); font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
+  .meta-tags { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--amber); margin-top: 6px; }
+  .copy-btn { background: none; border: 1px solid var(--line); color: var(--mute);
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; padding: 4px 10px;
+    border-radius: 6px; cursor: pointer; margin-top: 8px; }
+  .copy-btn:hover { border-color: var(--amber); color: var(--amber); }
   .clip-reason { color: var(--mute); font-size: 13px; margin-top: 8px; }
   .clip-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
   .clip-status { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--mute); }
@@ -318,17 +329,27 @@ function renderResults(job) {
       : c.status === "failed" ? "failed — " + (c.error || "render error") : "";
     el.innerHTML = `
       <div class="clip-top">
-        <div class="clip-title">${esc(c.title)}</div>
+        <div class="clip-title">${esc(c.title)}${c.layout === "split" ? '<span class="clip-badge">SPLIT</span>' : ''}</div>
         <div class="clip-time">${fmt(c.start)} → ${fmt(c.end)}</div>
       </div>
       ${c.hook ? `<div class="clip-hook">“${esc(c.hook)}”</div>` : ""}
       ${c.reason ? `<div class="clip-reason">${esc(c.reason)}</div>` : ""}
+      ${c.post_title ? `<div class="meta">
+        <div class="meta-title">${esc(c.post_title)}</div>
+        ${c.description ? `<div class="meta-desc">${esc(c.description)}</div>` : ""}
+        ${(c.hashtags||[]).length ? `<div class="meta-tags">${esc(c.hashtags.join(" "))}</div>` : ""}
+        <button class="copy-btn" data-copy="${esc(c.post_title)}\n\n${esc(c.description||"")}\n\n${esc((c.hashtags||[]).join(" "))}">copy post text</button>
+      </div>` : ""}
       <div class="clip-foot">
         <span class="clip-status ${c.status}">${statusText}</span>
         <a class="clip-dl" href="/api/jobs/${jobId}/clips/${c.index}" download>Download clip</a>
       </div>`;
     list.appendChild(el);
   });
+  list.querySelectorAll(".copy-btn").forEach(b => b.addEventListener("click", () => {
+    navigator.clipboard.writeText(b.dataset.copy.replace(/\\n/g, "\n"));
+    b.textContent = "copied ✓"; setTimeout(() => b.textContent = "copy post text", 1500);
+  }));
 }
 
 function hot(i, on) {

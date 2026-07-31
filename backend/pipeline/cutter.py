@@ -44,7 +44,7 @@ def _face_keyframes(video_path: str, start: float, end: float) -> list[tuple[flo
     try:
         return _detect_face_keyframes(video_path, start, end)
     except Exception:
-        return [(0.0, 0.5)]
+        return [(0.0, 0.5)], []
 
 
 def _grab_frame(video_path: str, t: float):
@@ -79,6 +79,7 @@ def _detect_face_keyframes(video_path: str, start: float, end: float) -> list[tu
     n_samples = max(8, min(24, int(duration / 1.5)))
     raw: list[float | None] = []
     times: list[float] = []
+    _boxes: list[tuple] = []
     for i in range(n_samples):
         t = start + duration * (i + 0.5) / n_samples
         times.append(t - start)
@@ -87,15 +88,17 @@ def _detect_face_keyframes(video_path: str, start: float, end: float) -> list[tu
             raw.append(None)
             continue
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = cascade.detectMultiScale(gray, 1.15, 5, minSize=(60, 60))
+        faces = cascade.detectMultiScale(gray, 1.15, 5, minSize=(48, 48))
         if len(faces):
             x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-            raw.append((x + w / 2) / frame.shape[1])
+            fh, fw = frame.shape[:2]
+            raw.append((x + w / 2) / fw)
+            _boxes.append((x / fw, y / fh, w / fw, h / fh))
         else:
             raw.append(None)
 
     if not any(c is not None for c in raw):
-        return [(0.0, 0.5)]
+        return [(0.0, 0.5)], []
 
     # Fill gaps: hold last known position; backfill the leading gap
     first = next(c for c in raw if c is not None)
@@ -109,7 +112,7 @@ def _detect_face_keyframes(video_path: str, start: float, end: float) -> list[tu
         float(np.mean(filled[max(0, i - 1): i + 2]))
         for i in range(len(filled))
     ]
-    return list(zip(times, sm))
+    return list(zip(times, sm)), _boxes
 
 
 def _x_expression(keyframes: list[tuple[float, float]], src_w: int, crop_w: int) -> str:
@@ -134,48 +137,122 @@ def _x_expression(keyframes: list[tuple[float, float]], src_w: int, crop_w: int)
     return f"if(lt(t{E}{pts[0][0]:.2f}){E}{pts[0][1]}{E}{expr})"
 
 
+def plan_layout(source: str, start: float, end: float) -> dict:
+    """Decide per-clip layout. Returns a plan dict consumed by render_clip:
+    {"mode": "face"|"split", "margin_v": int, ...mode-specific fields}."""
+    src_w, src_h = _probe_dimensions(source)
+    target_ratio = config.OUT_WIDTH / config.OUT_HEIGHT
+
+    if src_w / src_h <= target_ratio:
+        # Vertical/square source: simple center crop, normal captions
+        return {"mode": "face", "margin_v": config.CAPTION_MARGIN_V,
+                "src_w": src_w, "src_h": src_h, "keyframes": [(0.0, 0.5)]}
+
+    keyframes, boxes = _face_keyframes(source, start, end)
+    median_face_h = sorted(b[3] for b in boxes)[len(boxes) // 2] if boxes else 1.0
+    is_facecam = boxes and median_face_h < config.FACECAM_MAX_FACE_FRAC
+
+    mode = config.CLIP_LAYOUT
+    if mode == "auto":
+        mode = "split" if is_facecam else "face"
+    if mode == "split" and not boxes:
+        mode = "face"  # nothing to pin in the top panel
+
+    if mode == "face":
+        return {"mode": "face", "margin_v": config.CAPTION_MARGIN_V,
+                "src_w": src_w, "src_h": src_h, "keyframes": keyframes}
+
+    # Split: median face box, expanded into a facecam region with margin
+    n = len(boxes)
+    med = tuple(sorted(b[i] for b in boxes)[n // 2] for i in range(4))
+    fx, fy, fw, fh = med
+    cx, cy = fx + fw / 2, fy + fh / 2
+    # Top panel is 1080 x SPLIT_FACE_HEIGHT; crop region matches its aspect
+    panel_ratio = config.OUT_WIDTH / config.SPLIT_FACE_HEIGHT
+    crop_h = min(1.0, fh * 2.6)
+    crop_w = min(1.0, crop_h * panel_ratio * src_h / src_w)
+    crop_h = crop_w * src_w / (panel_ratio * src_h)  # re-sync after clamping
+    x0 = min(max(cx - crop_w / 2, 0.0), 1.0 - crop_w)
+    y0 = min(max(cy - crop_h / 2, 0.0), 1.0 - crop_h)
+    face_crop = (
+        int(x0 * src_w) // 2 * 2, int(y0 * src_h) // 2 * 2,
+        max(2, int(crop_w * src_w) // 2 * 2), max(2, int(crop_h * src_h) // 2 * 2),
+    )
+    return {"mode": "split", "margin_v": config.CAPTION_MARGIN_V_SPLIT,
+            "src_w": src_w, "src_h": src_h, "face_crop": face_crop}
+
+
+def _audio_args() -> list[str]:
+    args = []
+    if config.LOUDNORM:
+        args += ["-af", "loudnorm=I=-14:TP=-1.5:LRA=11"]
+    return args
+
+
 def render_clip(
     source: str,
     start: float,
     end: float,
     ass_path: Path,
     out_path: Path,
+    plan: dict | None = None,
 ) -> Path:
-    src_w, src_h = _probe_dimensions(source)
-    target_ratio = config.OUT_WIDTH / config.OUT_HEIGHT  # 9/16
-
-    if src_w / src_h > target_ratio:
-        # Landscape source: crop horizontally, keep full height,
-        # panning smoothly to follow the speaker's face
-        crop_w = int(src_h * target_ratio) // 2 * 2
-        crop_h = src_h
-        keyframes = _face_keyframes(source, start, end)
-        x_expr = _x_expression(keyframes, src_w, crop_w)
-        crop = f"crop={crop_w}:{crop_h}:x={x_expr}:y=0"
-    else:
-        # Already vertical / square: crop vertically if needed
-        crop_w = src_w
-        crop_h = int(src_w / target_ratio) // 2 * 2
-        crop_h = min(crop_h, src_h)
-        y = (src_h - crop_h) // 2
-        crop = f"crop={crop_w}:{crop_h}:0:{y}"
-
+    plan = plan or plan_layout(source, start, end)
+    src_w, src_h = plan["src_w"], plan["src_h"]
+    target_ratio = config.OUT_WIDTH / config.OUT_HEIGHT
     ass_escaped = str(ass_path).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
-    vf = (
-        f"{crop},scale={config.OUT_WIDTH}:{config.OUT_HEIGHT}:flags=lanczos,"
-        f"subtitles=filename='{ass_escaped}'"
-    )
+    subs = f"subtitles=filename='{ass_escaped}'"
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{start:.2f}", "-to", f"{end:.2f}",
-        "-i", source,
-        "-vf", vf,
-        "-c:v", "libx264", "-preset", config.VIDEO_PRESET, "-crf", config.VIDEO_CRF,
-        "-c:a", "aac", "-b:a", "160k",
-        "-movflags", "+faststart",
-        str(out_path),
-    ]
+    if plan["mode"] == "split":
+        fx, fy, fw, fh = plan["face_crop"]
+        face_h = config.SPLIT_FACE_HEIGHT
+        scr_h = int(config.OUT_WIDTH * src_h / src_w) // 2 * 2
+        scr_y = face_h + max(0, (config.OUT_HEIGHT - face_h - scr_h) // 2)
+        fc = (
+            f"[0:v]split=3[bgs][scr][fce];"
+            f"[bgs]scale={config.OUT_WIDTH}:{config.OUT_HEIGHT}:"
+            f"force_original_aspect_ratio=increase,"
+            f"crop={config.OUT_WIDTH}:{config.OUT_HEIGHT},"
+            f"boxblur=20:2,eq=brightness=-0.2[bg];"
+            f"[fce]crop={fw}:{fh}:{fx}:{fy},"
+            f"scale={config.OUT_WIDTH}:{face_h}:flags=lanczos[facep];"
+            f"[scr]scale={config.OUT_WIDTH}:{scr_h}:flags=lanczos[scrp];"
+            f"[bg][facep]overlay=0:0[t1];"
+            f"[t1][scrp]overlay=0:{scr_y}[t2];"
+            f"[t2]{subs}[vout]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", f"{start:.2f}", "-to", f"{end:.2f}",
+            "-i", source,
+            "-filter_complex", fc, "-map", "[vout]", "-map", "0:a?",
+            *_audio_args(),
+            "-c:v", "libx264", "-preset", config.VIDEO_PRESET, "-crf", config.VIDEO_CRF,
+            "-c:a", "aac", "-b:a", "160k",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
+    else:
+        if src_w / src_h > target_ratio:
+            crop_w = int(src_h * target_ratio) // 2 * 2
+            x_expr = _x_expression(plan["keyframes"], src_w, crop_w)
+            crop = f"crop={crop_w}:{src_h}:x={x_expr}:y=0"
+        else:
+            crop_w = src_w
+            crop_h = min(int(src_w / target_ratio) // 2 * 2, src_h)
+            crop = f"crop={crop_w}:{crop_h}:0:{(src_h - crop_h) // 2}"
+        vf = f"{crop},scale={config.OUT_WIDTH}:{config.OUT_HEIGHT}:flags=lanczos,{subs}"
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", f"{start:.2f}", "-to", f"{end:.2f}",
+            "-i", source,
+            "-vf", vf,
+            *_audio_args(),
+            "-c:v", "libx264", "-preset", config.VIDEO_PRESET, "-crf", config.VIDEO_CRF,
+            "-c:a", "aac", "-b:a", "160k",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     except subprocess.TimeoutExpired:

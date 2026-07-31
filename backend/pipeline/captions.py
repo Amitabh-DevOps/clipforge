@@ -26,7 +26,8 @@ _BORDER = (
 )
 _BACK = config.CAPTION_BOX_COLOR if config.CAPTION_BOX else "&H80000000"
 
-HEADER = f"""[Script Info]
+def _header(margin_v: int) -> str:
+    return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {config.OUT_WIDTH}
 PlayResY: {config.OUT_HEIGHT}
@@ -35,7 +36,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{config.CAPTION_FONT},{config.CAPTION_FONT_SIZE},&H00FFFFFF,&H00FFFFFF,{_BACK},{_BACK},-1,0,0,0,100,100,1,0,{_BORDER},2,60,60,{config.CAPTION_MARGIN_V},1
+Style: Cap,{config.CAPTION_FONT},{config.CAPTION_FONT_SIZE},&H00FFFFFF,&H00FFFFFF,{_BACK},{_BACK},-1,0,0,0,100,100,1,0,{_BORDER},2,60,60,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -66,7 +67,8 @@ def _esc(text: str) -> str:
     return text.replace("\\", "").replace("{", "").replace("}", "").upper()
 
 
-def build_ass(words: list[dict], clip_start: float, clip_end: float, out_path: Path) -> Path:
+def build_ass(words: list[dict], clip_start: float, clip_end: float, out_path: Path,
+              margin_v: int | None = None) -> Path:
     """words: word timestamps in ORIGINAL video time; shifted here to clip time."""
     local = [
         {
@@ -78,7 +80,7 @@ def build_ass(words: list[dict], clip_start: float, clip_end: float, out_path: P
         if w["end"] > clip_start and w["start"] < clip_end and w["word"]
     ]
 
-    lines = [HEADER]
+    lines = [_header(margin_v if margin_v is not None else config.CAPTION_MARGIN_V)]
     hi = config.CAPTION_HIGHLIGHT
     for page in _pages(local):
         page_end = page[-1]["end"]

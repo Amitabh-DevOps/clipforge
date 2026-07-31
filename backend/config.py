@@ -26,9 +26,24 @@ COOKIES_FILE = os.getenv("YT_COOKIES_FILE", str(BASE_DIR / "cookies.txt"))
 # ---- Whisper ----
 # "small" is a good speed/quality tradeoff on CPU. Use "medium" or "large-v3"
 # on a GPU instance (g4dn.xlarge) for best captions.
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "medium")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto")  # auto / cpu / cuda
 WHISPER_COMPUTE = os.getenv("WHISPER_COMPUTE", "auto")  # int8 on cpu, float16 on gpu
+
+# ---- Layout ----
+# auto: per-clip decision — big face => face-tracked crop; small corner face
+# (facecam over screen share) => split layout (face top, screen bottom).
+# Force with "face" or "split".
+CLIP_LAYOUT = os.getenv("CLIP_LAYOUT", "auto")
+# Face is treated as a facecam (=> split) when its height is under this
+# fraction of the frame height.
+FACECAM_MAX_FACE_FRAC = float(os.getenv("FACECAM_MAX_FACE_FRAC", "0.22"))
+SPLIT_FACE_HEIGHT = 640          # top panel height in the 1080x1920 output
+CAPTION_MARGIN_V_SPLIT = int(os.getenv("CAPTION_MARGIN_V_SPLIT", "150"))
+
+# ---- Audio ----
+# Normalize loudness to the -14 LUFS short-form platform target.
+LOUDNORM = os.getenv("LOUDNORM", "1") == "1"
 
 # ---- Clip settings ----
 MAX_CLIPS_DEFAULT = int(os.getenv("MAX_CLIPS_DEFAULT", "5"))

@@ -33,6 +33,12 @@ Select up to {max_clips} clips. Rules:
 - Do not overlap clips. Spread across the video if quality allows.
 - Titles: short, curiosity-driven, no clickbait lies, max 60 characters.
 
+For each clip also write ready-to-post metadata:
+- post_title: YouTube Shorts title, <=90 chars, curiosity-driven, may include ONE emoji
+- description: 2-3 sentences for the post, plain text, ending with a soft CTA
+  to the full video
+- hashtags: 4-6 lowercase hashtags, mix of broad (#devops) and specific
+
 Respond with ONLY a JSON array, no markdown, no commentary:
 [
   {{
@@ -40,7 +46,10 @@ Respond with ONLY a JSON array, no markdown, no commentary:
     "end": <number, seconds>,
     "title": "<clip title>",
     "hook": "<the first spoken line of the clip>",
-    "reason": "<one sentence: why this will perform>"
+    "reason": "<one sentence: why this will perform>",
+    "post_title": "<shorts title>",
+    "description": "<post description>",
+    "hashtags": ["#tag1", "#tag2"]
   }}
 ]"""
 
@@ -135,6 +144,10 @@ def find_clips(title: str, duration: float, segments: list[dict], max_clips: int
         length = end - start
         if length < config.CLIP_MIN_SECONDS - 3 or length > config.CLIP_MAX_SECONDS + 10:
             continue
+        tags = c.get("hashtags") or []
+        if not isinstance(tags, list):
+            tags = []
+        tags = [str(t).strip()[:40] for t in tags if str(t).strip()][:6]
         cleaned.append(
             {
                 "start": round(start, 2),
@@ -142,6 +155,9 @@ def find_clips(title: str, duration: float, segments: list[dict], max_clips: int
                 "title": str(c.get("title", "Clip"))[:80],
                 "hook": str(c.get("hook", ""))[:200],
                 "reason": str(c.get("reason", ""))[:300],
+                "post_title": str(c.get("post_title", c.get("title", "Clip")))[:120],
+                "description": str(c.get("description", ""))[:500],
+                "hashtags": tags,
             }
         )
     cleaned.sort(key=lambda c: c["start"])

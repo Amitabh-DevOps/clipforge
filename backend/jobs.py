@@ -135,14 +135,17 @@ def _run_pipeline(job_id: str):
             _update(job_id, progress=i / len(clips))
             out_path = job_dir / f"clip_{i}.mp4"
             try:
+                plan = cutter.plan_layout(video["path"], clip["start"], clip["end"])
                 ass_path = captions.build_ass(
                     transcript["words"], clip["start"], clip["end"],
-                    job_dir / f"clip_{i}.ass",
+                    job_dir / f"clip_{i}.ass", margin_v=plan["margin_v"],
                 )
                 cutter.render_clip(
-                    video["path"], clip["start"], clip["end"], ass_path, out_path
+                    video["path"], clip["start"], clip["end"], ass_path, out_path,
+                    plan=plan,
                 )
-                _update_clip(job_id, i, status="done", file=str(out_path))
+                _update_clip(job_id, i, status="done", file=str(out_path),
+                             layout=plan["mode"])
                 ok_count += 1
             except Exception as clip_err:
                 out_path.unlink(missing_ok=True)  # remove partial file
