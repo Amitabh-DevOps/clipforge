@@ -26,9 +26,12 @@ COOKIES_FILE = os.getenv("YT_COOKIES_FILE", str(BASE_DIR / "cookies.txt"))
 # ---- Whisper ----
 # "small" is a good speed/quality tradeoff on CPU. Use "medium" or "large-v3"
 # on a GPU instance (g4dn.xlarge) for best captions.
-WHISPER_MODEL = os.getenv("WHISPER_MODEL", "medium")
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "auto")  # auto / cpu / cuda
 WHISPER_COMPUTE = os.getenv("WHISPER_COMPUTE", "auto")  # int8 on cpu, float16 on gpu
+# "transcribe": captions in the spoken language. "translate": captions in
+# English regardless of spoken language (Whisper's built-in X->English mode).
+WHISPER_TASK = os.getenv("WHISPER_TASK", "transcribe")
 
 # ---- Layout ----
 # auto: per-clip decision — big face => face-tracked crop; small corner face

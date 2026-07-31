@@ -38,8 +38,10 @@ def transcribe(video_path: str, progress_cb=None) -> dict:
     words:    [{start, end, word}]
     """
     model = _get_model()
+    task = config.WHISPER_TASK if config.WHISPER_TASK in ("transcribe", "translate") else "transcribe"
     seg_iter, info = model.transcribe(
         video_path,
+        task=task,
         word_timestamps=True,
         vad_filter=True,
     )
