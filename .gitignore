@@ -3,6 +3,7 @@ backend/cookies.txt
 *.pem
 .env
 cookies.txt
+
 # Runtime artifacts
 backend/data/
 *.mp4

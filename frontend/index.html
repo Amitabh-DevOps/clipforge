@@ -297,6 +297,37 @@ async function poll() {
 
 const copyTexts = {};
 
+async function downloadClip(index, btn) {
+  const original = btn.textContent;
+  btn.textContent = "downloading…";
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/clips/${index}`);
+    const ctype = res.headers.get("content-type") || "";
+    if (!res.ok || !ctype.includes("video")) {
+      // Server sent an error (e.g. clip not ready yet) instead of a video —
+      // read the real message rather than silently saving it as a file.
+      let msg = "Clip isn't ready yet — wait a moment and try again.";
+      try { const j = await res.json(); if (j.detail) msg = j.detail; } catch {}
+      alert(msg);
+      btn.textContent = original;
+      return;
+    }
+    const blob = await res.blob();
+    const disp = res.headers.get("content-disposition") || "";
+    const m = disp.match(/filename="?([^"]+)"?/);
+    const filename = m ? m[1] : `clip_${index}.mp4`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    btn.textContent = original;
+  } catch (e) {
+    alert("Download failed: " + e.message);
+    btn.textContent = original;
+  }
+}
+
 function copyText(text) {
   // navigator.clipboard needs HTTPS/localhost; fall back to execCommand on HTTP
   if (navigator.clipboard && window.isSecureContext) {
@@ -370,10 +401,14 @@ function renderResults(job) {
       </div>` : ""}
       <div class="clip-foot">
         <span class="clip-status ${c.status}">${statusText}</span>
-        <a class="clip-dl" href="/api/jobs/${jobId}/clips/${c.index}" download>Download clip</a>
+        <a class="clip-dl" href="#" data-dl-index="${c.index}">Download clip</a>
       </div>`;
     list.appendChild(el);
   });
+  list.querySelectorAll(".clip-dl").forEach(a => a.addEventListener("click", (e) => {
+    e.preventDefault();
+    downloadClip(a.dataset.dlIndex, a);
+  }));
   list.querySelectorAll(".copy-btn").forEach(b => b.addEventListener("click", () => {
     copyText(copyTexts[b.dataset.clipCopy] || "")
       .then(() => { b.textContent = "copied ✓"; })
